@@ -45,3 +45,10 @@ credentials.json
 
 # LangGraph API
 .langgraph_api
+
+# ワークファイル
+zzz.md
+
+# serena
+.serena/
+
