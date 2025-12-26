@@ -8,7 +8,13 @@
     "memory_agent": "./apps/agents/src/memory-agent/graph.ts:graph",
     "research_agent": "./apps/agents/src/research-agent/retrieval-graph/graph.ts:graph",
     "research_index_graph": "./apps/agents/src/research-agent/index-graph/graph.ts:graph",
-    "retrieval_agent": "./apps/agents/src/retrieval-agent/graph.ts:graph"
+    "retrieval_agent": "./apps/agents/src/retrieval-agent/graph.ts:graph",
+    "p01_quickstart_graph": "./apps/agents/src/p01_QuickStart_graph/graph.ts:graph"
   },
-  "env": ".env"
+  "env": ".env",
+  "allowed_origins": [
+    "https://smith.langchain.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+  ]
 }
