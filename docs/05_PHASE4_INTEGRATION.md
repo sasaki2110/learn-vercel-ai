@@ -66,7 +66,7 @@
 ```typescript
 // API Route Handlerの基本構造
 import { streamText } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
@@ -194,7 +194,7 @@ export { db };
 
 ```typescript
 import { streamText } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 import { db } from '@/lib/db';
 
 export async function POST(req: Request) {
@@ -480,7 +480,7 @@ app/
 
 ```typescript
 import { streamText } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   try {
@@ -514,7 +514,7 @@ export async function POST(req: Request) {
 
 ```typescript
 import { generateObject } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
 
 const documentSchema = z.object({
@@ -680,7 +680,7 @@ export default function DocsPage() {
 
 ```typescript
 import { generateImage } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   try {
@@ -708,7 +708,7 @@ export async function POST(req: Request) {
 
 ```typescript
 import { transcribe } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   try {

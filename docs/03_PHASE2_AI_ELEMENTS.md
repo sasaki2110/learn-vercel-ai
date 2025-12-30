@@ -351,7 +351,7 @@ AI Elementsのコンポーネントは、通常のHTML要素と同じように�
 
 ```typescript
 import { streamText } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   const { messages } = await req.json();

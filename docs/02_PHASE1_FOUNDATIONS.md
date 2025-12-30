@@ -139,12 +139,99 @@ AI SDKは、複数のAIプロバイダー（OpenAI、Anthropic、Googleなど）
 **プロバイダー**: AIサービスを提供する企業（例: OpenAI、Anthropic）
 **モデル**: プロバイダーが提供する具体的なAIモデル（例: `gpt-4`、`claude-3-opus`）
 
+##### モデル指定の方法
+
+AI SDKでは、モデルを指定する方法が2つあります：
+
+**方法1: AI Gatewayを使用する場合（文字列形式）**
+
 ```typescript
-// プロバイダーとモデルの指定例
+// AI Gatewayを使用する場合
 const model = "openai/gpt-4";           // OpenAIのGPT-4
+const model = "openai/gpt-4-turbo";     // OpenAIのGPT-4 Turbo
+const model = "openai/gpt-4o";          // OpenAIのGPT-4o
+const model = "openai/gpt-3.5-turbo";   // OpenAIのGPT-3.5 Turbo
 const model = "anthropic/claude-3-opus"; // AnthropicのClaude 3 Opus
 const model = "google/gemini-pro";       // GoogleのGemini Pro
 ```
+
+**方法2: 直接プロバイダーを使用する場合（関数形式）**
+
+```typescript
+import { openai } from '@ai-sdk/openai';
+import { anthropic } from '@ai-sdk/anthropic';
+import { google } from '@ai-sdk/google';
+
+// OpenAIを直接使用
+const model = openai('gpt-4');
+const model = openai('gpt-4-turbo');
+const model = openai('gpt-4o');
+const model = openai('gpt-3.5-turbo');
+
+// Anthropicを直接使用
+const model = anthropic('claude-3-opus-20240229');
+
+// Googleを直接使用
+const model = google('gemini-pro');
+```
+
+##### OpenAIモデルの使用について
+
+**重要なポイント:**
+
+1. **OpenAI APIで利用可能なモデルは、基本的にAI SDKでも使用可能です**
+   - OpenAIの価格ページ（https://platform.openai.com/docs/pricing）に記載されているモデルは、OpenAI APIで利用可能であれば、AI SDKでも使用できます
+   - ただし、モデル名は正確に指定する必要があります
+
+2. **モデル名の指定方法**
+   - AI Gatewayを使用する場合: `"openai/gpt-4"` のような形式
+   - 直接OpenAIを使用する場合: `openai('gpt-4')` のような形式
+
+3. **利用可能なモデルの確認**
+   - OpenAI APIで利用可能なモデルは、[OpenAI Models Documentation](https://platform.openai.com/docs/models)で確認できます
+   - 最新のモデル（例: `gpt-4o`, `gpt-4-turbo`）も使用可能です
+
+4. **注意事項**
+   - `gpt-5-nano`のようなモデルは、現時点（2024年12月）では存在しません
+   - モデル名は正確に指定する必要があります（大文字小文字を区別）
+   - 新しいモデルがリリースされた場合、AI SDKの更新が必要な場合があります
+
+**使用例:**
+
+```typescript
+// AI Gatewayを使用する場合
+import { streamText } from 'ai';
+
+const result = await streamText({
+  model: "openai/gpt-4o",  // 最新のGPT-4oモデル
+  prompt: "Hello, world!",
+});
+
+// 直接OpenAIを使用する場合
+import { streamText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+const result = await streamText({
+  model: openai('gpt-4o'),  // 最新のGPT-4oモデル
+  prompt: "Hello, world!",
+});
+```
+
+**よく使用されるOpenAIモデル:**
+
+- `gpt-4o`: 最新のGPT-4モデル（2024年5月リリース）
+- `gpt-4-turbo`: GPT-4 Turbo
+- `gpt-4`: GPT-4
+- `gpt-3.5-turbo`: GPT-3.5 Turbo（コスト効率が良い）
+- `o1-preview`: 推論最適化モデル（2024年1月リリース）
+- `o1-mini`: 推論最適化モデルの軽量版
+
+**モデルの選択ガイド:**
+
+- **コスト効率を重視**: `gpt-3.5-turbo`
+- **バランス**: `gpt-4o` または `gpt-4-turbo`
+- **最高品質**: `gpt-4` または `o1-preview`
+- **推論タスク**: `o1-preview` または `o1-mini`
 
 #### 3.2.2 Prompts（プロンプト）
 
@@ -261,7 +348,7 @@ app/
 
 ```typescript
 import { streamText } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 
 // ストリーミングレスポンスを返すAPI Route
 export async function POST(req: Request) {
@@ -276,12 +363,25 @@ export async function POST(req: Request) {
 }
 ```
 
-**注意**: プロバイダーによってインポートが異なります：
+**注意**: AI SDK v6では、プロバイダーは別パッケージからインポートします。プロバイダーによってインポートが異なります：
 
-- OpenAI: `import { openai } from 'ai/openai';`
-- Anthropic: `import { anthropic } from 'ai/anthropic';`
-- Google: `import { google } from 'ai/google';`
+- OpenAI: `import { openai } from '@ai-sdk/openai';` （`@ai-sdk/openai`パッケージをインストールする必要があります）
+- Anthropic: `import { anthropic } from '@ai-sdk/anthropic';` （`@ai-sdk/anthropic`パッケージをインストールする必要があります）
+- Google: `import { google } from '@ai-sdk/google';` （`@ai-sdk/google`パッケージをインストールする必要があります）
 - AI Gateway: `import { createGateway } from 'ai/gateway';`
+
+**必要なパッケージのインストール:**
+
+```bash
+# OpenAIを使用する場合
+npm install @ai-sdk/openai
+
+# Anthropicを使用する場合
+npm install @ai-sdk/anthropic
+
+# Googleを使用する場合
+npm install @ai-sdk/google
+```
 
 ### 4.3 クライアントコンポーネントの作成
 
@@ -329,19 +429,27 @@ export default function Chat() {
 
 ```typescript
 import { generateText } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   const { prompt } = await req.json();
 
+  // AI Gatewayを使わずに、直接OpenAIを指定
+  // gpt-5-nanoを指定（注意: このモデルは現時点では存在しない可能性があります）
   const { text } = await generateText({
-    model: openai('gpt-4'),
+    model: openai('gpt-5-nano'),
     prompt,
   });
 
   return Response.json({ text });
 }
 ```
+
+**注意**: 
+- この例では、AI Gatewayを使わずに直接OpenAIプロバイダーを使用しています
+- `openai('gpt-5-nano')`のように、関数形式でモデルを指定します
+- `gpt-5-nano`は例として使用していますが、実際に使用する場合は、OpenAI APIで利用可能なモデル名を指定してください
+- 利用可能なモデルは、[OpenAI Models Documentation](https://platform.openai.com/docs/models)で確認できます
 
 **`app/generate/page.tsx`**:
 
@@ -409,7 +517,7 @@ API Route Handlerで環境変数が正しく読み込まれているか確認し
 
 ```typescript
 import { streamText } from 'ai';
-import { openai } from 'ai/openai';
+import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   // 開発環境でのみ環境変数を確認
