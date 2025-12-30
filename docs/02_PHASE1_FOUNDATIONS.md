@@ -359,7 +359,7 @@ export async function POST(req: Request) {
     messages,
   });
 
-  return result.toDataStreamResponse();
+  return result.toTextStreamResponse();
 }
 ```
 
@@ -509,7 +509,203 @@ export default function GeneratePage() {
 }
 ```
 
-### 4.5 環境変数の設定確認
+### 4.5 ストリーミングテキスト生成の実装
+
+ストリーミングを使用してリアルタイムでテキストを生成する例：
+
+**`app/api/stream/route.ts`**:
+
+```typescript
+import { streamText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+export async function POST(req: Request) {
+  try {
+    const { prompt } = await req.json();
+
+    if (!prompt) {
+      return Response.json(
+        { error: 'Prompt is required' },
+        { status: 400 }
+      );
+    }
+
+    // streamText()を使用してストリーミングレスポンスを返す
+    // generateText()とは異なり、結果を段階的に返すことができる
+    const result = await streamText({
+      model: openai('gpt-5-nano'),  // モデルオブジェクトを指定
+      prompt,                        // この時点でOpenAI APIが呼び出される
+    });
+
+    // toUIMessageStreamResponse()でストリーミングレスポンスを返す
+    // useCompletionはこの形式を期待している
+    // これにより、クライアント側でリアルタイムにテキストを受信できる
+    return result.toUIMessageStreamResponse();
+  } catch (error: any) {
+    console.error('Stream API error:', error);
+    
+    // モデルが存在しない場合のエラーハンドリング
+    if (error.message?.includes('model') || error.status === 404) {
+      return Response.json(
+        { 
+          error: 'Model not found. Please check if the model name is correct.',
+          details: 'The model "gpt-5-nano" may not exist. Try using "gpt-4o" or "gpt-3.5-turbo" instead.'
+        },
+        { status: 400 }
+      );
+    }
+
+    return Response.json(
+      { 
+        error: 'Failed to stream text',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      },
+      { status: 500 }
+    );
+  }
+}
+```
+
+**注意**: 
+- `streamText`は`generateText`と異なり、結果を段階的に返すことができます
+- `toUIMessageStreamResponse()`を使用してストリーミングレスポンスを返します（`useCompletion`や`useChat`などのUIフックが期待する形式です）
+- クライアント側では`useCompletion`フックを使用してストリーミングを処理します
+
+**`app/stream/page.tsx`**:
+
+```typescript
+'use client';
+
+import { useCompletion } from '@ai-sdk/react';
+
+export default function StreamPage() {
+  // useCompletionフックを使用してストリーミングを処理
+  // completion: 現在の完了テキスト
+  // input: 入力フィールドの値
+  // handleInputChange: 入力フィールドの変更ハンドラ
+  // handleSubmit: フォーム送信ハンドラ
+  // isLoading: ローディング状態
+  // error: エラー状態
+  const { completion, input, handleInputChange, handleSubmit, isLoading, error } = useCompletion({
+    api: '/api/stream',  // ストリーミングAPIのエンドポイント
+  });
+
+  return (
+    <div className="container mx-auto p-8 max-w-4xl">
+      <h1 className="text-2xl font-bold mb-4">Streaming Text Generation</h1>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <textarea
+          value={input}
+          onChange={handleInputChange}
+          placeholder="Enter your prompt..."
+          className="w-full p-2 border rounded dark:bg-gray-800 dark:text-white dark:border-gray-700"
+          rows={4}
+          disabled={isLoading}
+        />
+        <button
+          type="submit"
+          disabled={isLoading || !input.trim()}
+          className="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-600"
+        >
+          {isLoading ? 'Streaming...' : 'Stream'}
+        </button>
+      </form>
+      
+      {error && (
+        <div className="mt-4 p-4 bg-red-100 dark:bg-red-900 rounded">
+          <h2 className="font-bold mb-2 text-red-800 dark:text-red-200">Error:</h2>
+          <pre className="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap">
+            {error.message || 'An error occurred while streaming text. Please try again.'}
+          </pre>
+        </div>
+      )}
+
+      {completion && (
+        <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-800 rounded">
+          <h2 className="font-bold mb-2">Streaming Result:</h2>
+          <p className="whitespace-pre-wrap">{completion}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+**重要なポイント**:
+- `useCompletion`フックは`@ai-sdk/react`からインポートします（AI SDK v6では`ai/react`ではなく`@ai-sdk/react`を使用します）
+- `@ai-sdk/react`パッケージをインストールする必要があります: `npm install @ai-sdk/react`
+- ストリーミングでは、テキストが段階的に表示されるため、ユーザーは応答の完了を待たずに結果を確認できます
+
+#### 4.5.1 `useCompletion`フックの詳細解説
+
+`useCompletion`は、AI SDKのReactフックで、シンプルなプロンプト→レスポンスのストリーミング処理を提供します。
+
+**主な機能**:
+- **ストリーミング処理**: APIから受信したチャンクをリアルタイムで`completion`ステートに反映します
+- **状態管理**: `input`、`completion`、`isLoading`、`error`などの状態を自動管理します
+- **イベントハンドラ**: `handleInputChange`、`handleSubmit`などのイベントハンドラを提供します
+
+**返される値の詳細**:
+- `completion`: 現在の完了テキスト（ストリーミング中は段階的に更新される）
+- `input`: 入力フィールドの値
+- `handleInputChange`: 入力フィールドの変更を処理するハンドラ
+- `handleSubmit`: フォーム送信を処理するハンドラ
+- `isLoading`: ストリーミング中のローディング状態（`true`/`false`）
+- `error`: エラーが発生した場合のエラーオブジェクト
+
+**`useChat`との違い**:
+- `useChat`: メッセージ履歴を管理する（`messages`配列を持つ）。チャット形式の会話に適している
+- `useCompletion`: シンプルなプロンプト→レスポンス（履歴なし）。単発のテキスト生成に適している
+
+**使用例**:
+```typescript
+const { completion, input, handleInputChange, handleSubmit, isLoading, error } = useCompletion({
+  api: '/api/stream',  // APIエンドポイント
+  onFinish: (prompt, completion) => {
+    // ストリーミング完了時のコールバック
+    console.log('Completed:', completion);
+  },
+  onError: (error) => {
+    // エラー発生時のコールバック
+    console.error('Error:', error);
+  },
+});
+```
+
+#### 4.5.2 `toUIMessageStreamResponse()`メソッドの詳細解説
+
+`toUIMessageStreamResponse()`は、`streamText()`の戻り値が持つメソッドで、UI向けのストリーミングレスポンスを生成します。
+
+**主な特徴**:
+- **UI向けフォーマット**: `useCompletion`や`useChat`などのUIフックが期待する形式でレスポンスを返します
+- **ストリーミング対応**: チャンクを順次送信するため、リアルタイムでテキストを表示できます
+- **メタデータ付与**: チャンクに必要なメタデータを含めるため、UIフックが正しく動作します
+
+**他のメソッドとの違い**:
+- `toTextStreamResponse()`: テキストのみのストリーミングレスポンス（UIフック非対応の可能性あり）
+- `toUIMessageStreamResponse()`: UIフック（`useCompletion`、`useChat`）向けの形式（推奨）
+
+**使用例**:
+```typescript
+const result = await streamText({
+  model: openai('gpt-5-nano'),
+  prompt,
+});
+
+// useCompletionが期待する形式でレスポンスを返す
+return result.toUIMessageStreamResponse();
+```
+
+**内部的な動作**:
+1. `streamText()`がストリームを生成
+2. `toUIMessageStreamResponse()`がUIフック向けの形式に変換
+3. クライアント側の`useCompletion`が受信して`completion`ステートを更新
+
+**注意点**:
+- `useCompletion`を使用する場合は、必ず`toUIMessageStreamResponse()`を使用してください
+- `toTextStreamResponse()`を使用すると、`useCompletion`が正しく動作しない可能性があります
+
+### 4.6 環境変数の設定確認
 
 API Route Handlerで環境変数が正しく読み込まれているか確認します。
 
@@ -532,7 +728,7 @@ export async function POST(req: Request) {
     messages,
   });
 
-  return result.toDataStreamResponse();
+  return result.toTextStreamResponse();
 }
 ```
 
@@ -574,13 +770,17 @@ export async function POST(req: Request) {
 **目標**: ストリーミングを使用してリアルタイムでテキストを表示する
 
 **手順**:
-1. `useChat`フックを使用（既に実装済みの場合もあり）
-2. ストリーミングの動作を確認
-3. UIの改善（タイピングアニメーションなど）
+1. `app/api/stream/route.ts`を作成（上記のコードを参考）
+2. `app/stream/page.tsx`にUIを実装
+3. `@ai-sdk/react`パッケージをインストール: `npm install @ai-sdk/react`
+4. ストリーミングの動作を確認
 
 **チェックリスト**:
+- [ ] `app/api/stream/route.ts`が正しく動作する
+- [ ] `useCompletion`フックが正しく動作する
 - [ ] ストリーミングが正しく動作する
 - [ ] テキストが段階的に表示される
+- [ ] エラーハンドリングが実装されている
 - [ ] ユーザー体験が向上している
 
 ### タスク4: プロンプトエンジニアリングの練習
@@ -625,7 +825,7 @@ npm i ai
 
 **解決方法**:
 1. `'use client'`ディレクティブがコンポーネントの先頭にあることを確認
-2. API Route Handlerで`toDataStreamResponse()`を使用していることを確認
+2. API Route Handlerで`toTextStreamResponse()`を使用していることを確認
 
 ### 6.2 デバッグのヒント
 
