@@ -264,87 +264,148 @@ for await (const chunk of stream.textStream) {
 
 #### 3.2.4 Tools（ツール）
 
-ツールは、AIモデル（LLM）が外部機能を呼び出すための仕組みです。例えば、天気情報を取得したり、データベースを検索したりできます。
+ツールは、AIモデル（LLM）が外部機能を呼び出すための仕組みです。例えば、天気情報を取得したり、数学計算を実行したりできます。
 
 **Tools機能の仕組み:**
 
 Toolsは、**呼び出しているLLMへツールを提供する**機能です。開発者がツールを定義してLLMに提供すると、LLMが会話の文脈を判断して、必要に応じて自動的にツールを呼び出します。
 
-**動作フロー:**
-
-1. **開発者がツールを定義**
-   - `description`: LLMがこのツールを理解するための説明
-   - `parameters`: ツールが受け取るパラメータの定義（Zodスキーマ）
-   - `execute`: 実際に実行される関数
-
-2. **`streamText()`や`generateText()`にツールを渡す**
-   - `tools`パラメータとしてツール定義を渡す
-
-3. **LLMが会話の文脈を判断し、必要に応じてツールを呼び出す**
-   - ユーザーの質問を理解し、「このツールを使う必要がある」と判断
-   - 適切なパラメータでツールを呼び出す
-
-4. **AI SDKがツールの`execute`関数を実行**
-   - 実行結果を取得
-
-5. **実行結果をLLMに返す**
-   - LLMがツールの実行結果を受け取り、それを基に最終的な回答を生成
-
 **重要なポイント:**
 
 - **LLMが自動で判断**: 開発者がツールを呼び出すタイミングを指定する必要はありません。LLMが会話の文脈から自動的に判断します。
+- **ツールの選択はLLMに完全に任せる**: 開発者はツールを定義するだけで、どのツールをいつ使うかはLLMが判断します。
 - **ループ処理は不要**: AI SDKがツール呼び出しのループを自動で処理します。自前でReactループなどを作成する必要はありません。
 - **複数ツールの連鎖**: LLMが必要に応じて複数のツールを順番に呼び出すことも可能です。
 
-**基本的な使用例:**
+**動作フロー:**
+
+1. **開発者がツールを定義**（`app/api/tools/index.ts`）
+   - AI SDK 6では`tool()`関数を使用
+   - `description`: LLMがこのツールを理解するための説明
+   - `inputSchema`: ツールが受け取るパラメータの定義（Zodスキーマ）
+   - `execute`: 実際に実行される関数
+
+2. **ツールをオブジェクトとしてエクスポート**
+   - すべてのツールを1つのオブジェクトにまとめる
+
+3. **API Route Handlerでツールをインポート**（`app/api/chat/route.ts`）
+   - `streamText()`や`generateText()`に`tools`パラメータとして渡す
+
+4. **LLMが会話の文脈を判断し、必要に応じてツールを呼び出す**
+   - ユーザーの質問を理解し、「このツールを使う必要がある」と判断
+   - 適切なパラメータでツールを呼び出す
+
+5. **AI SDKがツールの`execute`関数を実行**
+   - 実行結果を取得
+
+6. **実行結果をLLMに返す**
+   - LLMがツールの実行結果を受け取り、それを基に最終的な回答を生成
+
+**実装例:**
+
+**1. ツール定義ファイル（`app/api/tools/index.ts`）:**
 
 ```typescript
+import { tool } from 'ai';
 import { z } from 'zod';
 
-const tools = {
-  getWeather: {
-    description: "Get the current weather for a location",
-    parameters: z.object({
-      location: z.string().describe("The city and state, e.g. San Francisco, CA"),
-    }),
-    execute: async ({ location }) => {
-      // 実際の天気APIを呼び出す
-      // ここでは例として固定値を返す
-      return {
-        location,
-        temperature: '72°F',
-        condition: 'Sunny',
-      };
-    },
+/**
+ * 天気情報を取得するツール
+ */
+export const getWeather = tool({
+  description: "Get the current weather for a location",
+  inputSchema: z.object({
+    location: z.string().describe("The city and state, e.g. San Francisco, CA"),
+  }),
+  execute: async ({ location }) => {
+    // 実際の天気APIを呼び出す
+    // ここでは例として固定値を返す
+    return {
+      location,
+      temperature: '72°F',
+      condition: 'Sunny',
+    };
   },
-  calculate: {
-    description: "Perform a mathematical calculation",
-    parameters: z.object({
-      expression: z.string().describe("Mathematical expression to evaluate"),
-    }),
-    execute: async ({ expression }) => {
-      // セキュリティのため、evalは使用しない
-      // 実際の実装では、安全な計算ライブラリを使用
-      try {
-        // 例: 簡単な計算のみを許可
-        if (/^[\d+\-*/().\s]+$/.test(expression)) {
-          // 安全な計算処理
-          return { result: 'Calculation result' };
-        }
-        return { error: 'Invalid expression' };
-      } catch (error) {
-        return { error: 'Calculation failed' };
-      }
-    },
-  },
-};
-
-// streamText()にツールを渡す
-const result = await streamText({
-  model: openai('gpt-5-nano'),
-  messages: await convertToModelMessages(messages),
-  tools,  // ← ここでLLMにツールを提供
 });
+
+/**
+ * 数学計算を実行するツール
+ */
+export const calculate = tool({
+  description: "Perform a mathematical calculation. Supports basic arithmetic operations like addition, subtraction, multiplication, and division.",
+  inputSchema: z.object({
+    expression: z.string().describe("Mathematical expression to evaluate (e.g., '2 + 2', '10 * 5', '100 / 4')"),
+  }),
+  execute: async ({ expression }) => {
+    // セキュリティのため、許可された文字のみをチェック
+    const sanitized = expression.trim();
+    
+    if (!/^[\d+\-*/().\s]+$/.test(sanitized)) {
+      return { 
+        error: 'Invalid expression. Only numbers and basic operators (+, -, *, /) are allowed.',
+        expression 
+      };
+    }
+
+    try {
+      // 安全な計算処理（簡易版）
+      // 注意: 本番環境では、より安全な計算ライブラリ（例: mathjs）を使用することを推奨
+      const result = Function(`"use strict"; return (${sanitized})`)();
+      
+      if (typeof result !== 'number' || !isFinite(result)) {
+        return { 
+          error: 'Calculation resulted in an invalid number',
+          expression 
+        };
+      }
+
+      return { 
+        result,
+        expression: sanitized,
+        message: `${sanitized} = ${result}`
+      };
+    } catch (error: any) {
+      return { 
+        error: 'Calculation failed',
+        details: error.message,
+        expression 
+      };
+    }
+  },
+});
+
+/**
+ * すべてのツールをエクスポート
+ */
+export const tools = {
+  getWeather,
+  calculate,
+};
+```
+
+**2. API Route Handler（`app/api/chat/route.ts`）:**
+
+```typescript
+import { convertToModelMessages, streamText, UIMessage, stepCountIs } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import { tools } from '../tools';  // ツールをインポート
+
+export async function POST(req: Request) {
+  const { messages }: { messages: UIMessage[] } = await req.json();
+  const modelMessages = await convertToModelMessages(messages);
+
+  // streamText()にツールを渡す
+  // stopWhen: デフォルトはstepCountIs(1)で、1ステップで停止してしまいます
+  // ツール呼び出し後に最終回答を生成するために、複数のステップを許可する必要があります
+  const result = await streamText({
+    model: openai('gpt-5-nano'),
+    messages: modelMessages,
+    tools,  // ← ここでLLMにツールを提供
+    stopWhen: stepCountIs(5),  // ツール呼び出し後の最終回答を生成するために、最大5ステップまで許可
+  });
+
+  return result.toUIMessageStreamResponse();
+}
 ```
 
 **使用例の動作:**
@@ -366,13 +427,27 @@ LLM: "東京の現在の天気は晴れで、気温は72°Fです。"
 **複数ツールの連鎖例:**
 
 ```
-ユーザー: "東京の天気を教えて、それからその気温を摂氏に変換して"
+ユーザー: "10 + 5を計算して、その結果に3を掛けて"
 ↓
-1. LLMがgetWeather({ location: "Tokyo" })を呼び出す
-2. 結果: { temperature: '72°F' }
-3. LLMがconvertTemperature({ fahrenheit: 72 })を呼び出す（もしそのツールがあれば）
+1. LLMがcalculate({ expression: "10 + 5" })を呼び出す
+2. 結果: { result: 15, expression: "10 + 5" }
+3. LLMがcalculate({ expression: "15 * 3" })を呼び出す
 4. 最終的な回答を生成
 ```
+
+**実装のポイント:**
+
+1. **ファイル構成**
+   - ツール定義は`app/api/tools/index.ts`に集約
+   - API Route Handlerから`../tools`でインポート
+
+2. **`stopWhen`の設定**
+   - デフォルトの`stepCountIs(1)`では、ツール呼び出し後に最終回答を生成する前に停止してしまう
+   - `stopWhen: stepCountIs(5)`などで複数ステップを許可し、ツール呼び出し→結果取得→最終回答生成の流れを確保
+
+3. **ツールの選択はLLMに完全に任せる**
+   - 開発者はツールを定義するだけで、どのツールをいつ使うかはLLMが判断
+   - クライアント側でツールを選択する必要はない
 
 ### 3.3 主要なAPI
 
@@ -428,11 +503,20 @@ Next.js App Routerを使用する場合、以下の構造で実装します：
 ```
 app/
 ├── api/
-│   └── chat/
-│       └── route.ts        # API Route Handler
-├── page.tsx                # クライアントコンポーネント
+│   ├── chat/
+│   │   └── route.ts        # チャットAPI Route Handler
+│   └── tools/
+│       └── index.ts        # ツール定義（集約）
+├── chat/
+│   └── page.tsx            # チャットページ（クライアントコンポーネント）
+├── page.tsx                # メインページ
 └── layout.tsx
 ```
+
+**ツールの配置について:**
+- ツール定義は`app/api/tools/index.ts`に集約
+- 各ツールは`tool()`関数で定義し、最後に`tools`オブジェクトとしてエクスポート
+- API Route Handlerから`../tools`でインポートして使用
 
 ### 4.2 API Route Handlerの作成
 
@@ -441,16 +525,21 @@ app/
 **`app/api/chat/route.ts`**を作成：
 
 ```typescript
-import { convertToModelMessages, streamText, UIMessage } from 'ai';
+import { convertToModelMessages, streamText, UIMessage, stepCountIs } from 'ai';
 import { openai } from '@ai-sdk/openai';
+import { tools } from '../tools';  // ツールをインポート
 
 // ストリーミングレスポンスを返すAPI Route
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
 
+  const modelMessages = await convertToModelMessages(messages);
+
   const result = await streamText({
-    model: openai('gpt-4'),
-    messages: await convertToModelMessages(messages),  // AI SDK 6ではUIMessageをModelMessageに変換
+    model: openai('gpt-5-nano'),
+    messages: modelMessages,
+    tools,  // ツールを渡す（オプション）
+    stopWhen: stepCountIs(5),  // ツール呼び出し後の最終回答生成のために複数ステップを許可
   });
 
   return result.toUIMessageStreamResponse();  // AI SDK 6ではuseChat()がこの形式を期待

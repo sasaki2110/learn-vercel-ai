@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     const result = await streamText({
       model: openai('gpt-5-nano'),
       messages: modelMessages,
-      tools,
+      tools, // 理解出来たら、この１文でapp/api/tools/index.tsのツールを使用できるようになるんだ。
       stopWhen: stepCountIs(5),  // ツール呼び出し後の最終回答を生成するために、最大5ステップまで許可
       onStepFinish: async (step) => {
         // 各ステップの完了をログに記録
