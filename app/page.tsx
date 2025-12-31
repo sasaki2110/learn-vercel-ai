@@ -12,7 +12,7 @@ export default function Home() {
             AI SDKの学習用サンプルアプリケーション
           </p>
           
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 w-full max-w-2xl">
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 w-full max-w-4xl">
             <Link
               href="/generate"
               className="flex flex-col items-center justify-center p-6 rounded-lg border border-solid border-black/[.08] bg-white dark:bg-gray-800 dark:border-white/[.145] transition-colors hover:border-transparent hover:bg-black/[.04] dark:hover:bg-[#1a1a1a]"
@@ -34,6 +34,18 @@ export default function Home() {
               </div>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
                 ストリーミングテキスト生成
+              </p>
+            </Link>
+            
+            <Link
+              href="/chat"
+              className="flex flex-col items-center justify-center p-6 rounded-lg border border-solid border-black/[.08] bg-white dark:bg-gray-800 dark:border-white/[.145] transition-colors hover:border-transparent hover:bg-black/[.04] dark:hover:bg-[#1a1a1a]"
+            >
+              <div className="text-2xl font-semibold mb-2 text-black dark:text-zinc-50">
+                Chat
+              </div>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                useChat()を使ったチャット
               </p>
             </Link>
           </div>
