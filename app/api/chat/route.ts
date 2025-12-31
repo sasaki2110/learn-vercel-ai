@@ -1,9 +1,9 @@
-import { streamText } from 'ai';
+import { convertToModelMessages, streamText, UIMessage } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { messages }: { messages: UIMessage[] } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return Response.json(
@@ -13,15 +13,15 @@ export async function POST(req: Request) {
     }
 
     // streamText()を使用してストリーミングレスポンスを返す
-    // useChat()はmessages配列を送信する
+    // AI SDK 6では、convertToModelMessages()でUIMessageをModelMessageに変換する必要がある
     const result = await streamText({
       model: openai('gpt-4o'),  // GPT-4oモデルを使用
-      messages,                  // メッセージ履歴を渡す
+      messages: await convertToModelMessages(messages),  // UIMessageをModelMessageに変換
     });
 
-    // toDataStreamResponse()でストリーミングレスポンスを返す
-    // useChat()はこの形式を期待している
-    return result.toDataStreamResponse();
+    // toUIMessageStreamResponse()でストリーミングレスポンスを返す
+    // AI SDK 6では、useChat()はこの形式を期待している
+    return result.toUIMessageStreamResponse();
   } catch (error: any) {
     console.error('Chat API error:', error);
     

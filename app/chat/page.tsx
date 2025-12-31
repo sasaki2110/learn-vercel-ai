@@ -1,30 +1,23 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { useEffect } from 'react';
+import { DefaultChatTransport } from 'ai';
+import { useState } from 'react';
 
 export default function ChatPage() {
-  // useChatフックを使用してチャットの状態を管理
+  // AI SDK 6の新しいAPIを使用
+  // transport: DefaultChatTransportを使用してAPIエンドポイントを指定
   // messages: メッセージ履歴の配列
-  // input: 入力フィールドの値
-  // handleInputChange: 入力フィールドの変更ハンドラ
-  // handleSubmit: フォーム送信ハンドラ
-  // isLoading: ローディング状態
-  // error: エラー状態
-  const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
-    api: '/api/chat',  // チャットAPIのエンドポイント
+  // sendMessage: メッセージを送信する関数
+  // status: チャットの状態 ('ready' | 'submitted' | 'streaming' | 'error')
+  const { messages, sendMessage, status, error } = useChat({
+    transport: new DefaultChatTransport({
+      api: '/api/chat',  // チャットAPIのエンドポイント
+    }),
   });
 
-  // デバッグ用: useChatの戻り値を確認
-  useEffect(() => {
-    console.log('useChat values:', {
-      input,
-      hasHandleInputChange: !!handleInputChange,
-      hasHandleSubmit: !!handleSubmit,
-      isLoading,
-      error,
-    });
-  }, [input, handleInputChange, handleSubmit, isLoading, error]);
+  // 入力フィールドの状態を手動で管理（AI SDK 6の新しいAPIでは、inputは提供されない）
+  const [input, setInput] = useState('');
 
   return (
     <div className="container mx-auto p-8 max-w-4xl">
@@ -49,10 +42,18 @@ export default function ChatPage() {
             <div className="font-semibold mb-1 text-sm">
               {message.role === 'user' ? 'あなた' : 'AI'}
             </div>
-            <div className="whitespace-pre-wrap">{message.content}</div>
+            {/* AI SDK 6では、message.contentではなくmessage.partsを使用 */}
+            <div className="whitespace-pre-wrap">
+              {message.parts.map((part, index) => {
+                if (part.type === 'text') {
+                  return <span key={index}>{part.text}</span>;
+                }
+                return null;
+              })}
+            </div>
           </div>
         ))}
-        {isLoading && (
+        {(status === 'submitted' || status === 'streaming') && (
           <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg mr-auto max-w-[80%]">
             <div className="font-semibold mb-1 text-sm">AI</div>
             <div className="text-gray-500">考え中...</div>
@@ -71,22 +72,31 @@ export default function ChatPage() {
       )}
 
       {/* 入力フォーム */}
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (input.trim()) {
+            sendMessage({ text: input });
+            setInput('');
+          }
+        }}
+        className="space-y-4"
+      >
         <div className="flex gap-2">
           <input
             type="text"
-            value={input ?? ''}
-            onChange={handleInputChange}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
             placeholder="メッセージを入力..."
             className="flex-1 p-3 border border-gray-300 dark:border-gray-700 rounded-lg dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={isLoading}
+            disabled={status !== 'ready'}
           />
           <button
             type="submit"
-            disabled={isLoading || !(input ?? '').trim()}
+            disabled={status !== 'ready' || !input.trim()}
             className="px-6 py-3 bg-blue-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors"
           >
-            {isLoading ? '送信中...' : '送信'}
+            {status === 'submitted' || status === 'streaming' ? '送信中...' : '送信'}
           </button>
         </div>
       </form>
