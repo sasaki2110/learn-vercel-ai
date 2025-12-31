@@ -361,7 +361,7 @@ export async function POST(req: Request) {
     messages,
   });
 
-  return result.toDataStreamResponse();
+  return result.toUIMessageStreamResponse();  // AI SDK 6ではuseChat()がこの形式を期待
 }
 ```
 

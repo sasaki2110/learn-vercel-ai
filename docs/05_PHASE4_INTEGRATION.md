@@ -64,17 +64,17 @@
 
 **重要なポイント:**
 ```typescript
-// API Route Handlerの基本構造
-import { streamText } from 'ai';
+// API Route Handlerの基本構造（AI SDK 6対応）
+import { convertToModelMessages, streamText, UIMessage } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  const { messages }: { messages: UIMessage[] } = await req.json();
   const result = await streamText({
     model: openai('gpt-4'),
-    messages,
+    messages: await convertToModelMessages(messages),  // AI SDK 6ではUIMessageをModelMessageに変換
   });
-  return result.toDataStreamResponse();
+  return result.toUIMessageStreamResponse();  // AI SDK 6ではuseChat()がこの形式を期待
 }
 ```
 
@@ -193,17 +193,17 @@ export { db };
 **`app/api/chat/route.ts`**を作成：
 
 ```typescript
-import { streamText } from 'ai';
+import { convertToModelMessages, streamText, UIMessage } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { db } from '@/lib/db';
 
 export async function POST(req: Request) {
   try {
-    const { messages, conversationId } = await req.json();
+    const { messages, conversationId }: { messages: UIMessage[]; conversationId?: string } = await req.json();
 
     // メッセージをデータベースに保存（オプション）
     if (conversationId) {
-      messages.forEach((msg: any) => {
+      messages.forEach((msg: UIMessage) => {
         db.prepare(
           'INSERT OR REPLACE INTO messages (id, role, content) VALUES (?, ?, ?)'
         ).run(`${conversationId}-${msg.id}`, msg.role, msg.content);
@@ -212,12 +212,12 @@ export async function POST(req: Request) {
 
     const result = await streamText({
       model: openai('gpt-4'),
-      messages,
+      messages: await convertToModelMessages(messages),  // AI SDK 6ではUIMessageをModelMessageに変換
       maxTokens: 1000,
       temperature: 0.7,
     });
 
-    return result.toDataStreamResponse();
+    return result.toUIMessageStreamResponse();  // AI SDK 6ではuseChat()がこの形式を期待
   } catch (error) {
     console.error('Chat API error:', error);
     return Response.json(
@@ -269,15 +269,15 @@ const tools = {
 };
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  const { messages }: { messages: UIMessage[] } = await req.json();
 
   const result = await streamText({
     model: openai('gpt-4'),
-    messages,
+    messages: await convertToModelMessages(messages),  // AI SDK 6ではUIMessageをModelMessageに変換
     tools,
   });
 
-  return result.toDataStreamResponse();
+  return result.toUIMessageStreamResponse();  // AI SDK 6ではuseChat()がこの形式を期待
 }
 ```
 
@@ -497,7 +497,7 @@ export async function POST(req: Request) {
       maxTokens: 2000,
     });
 
-    return result.toDataStreamResponse();
+    return result.toUIMessageStreamResponse();  // AI SDK 6ではuseChat()がこの形式を期待
   } catch (error) {
     console.error('Generate API error:', error);
     return Response.json(
@@ -859,10 +859,13 @@ export default function MultimodalPage() {
 #### API Route Handlerでのエラーハンドリング
 
 ```typescript
+import { convertToModelMessages, streamText, UIMessage } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
 export async function POST(req: Request) {
   try {
     // リクエストの検証
-    const { messages } = await req.json();
+    const { messages }: { messages: UIMessage[] } = await req.json();
     if (!messages || !Array.isArray(messages)) {
       return Response.json(
         { error: 'Invalid request format' },
@@ -873,10 +876,10 @@ export async function POST(req: Request) {
     // API呼び出し
     const result = await streamText({
       model: openai('gpt-4'),
-      messages,
+      messages: await convertToModelMessages(messages),  // AI SDK 6ではUIMessageをModelMessageに変換
     });
 
-    return result.toDataStreamResponse();
+    return result.toUIMessageStreamResponse();  // AI SDK 6ではuseChat()がこの形式を期待
   } catch (error) {
     // エラーログ
     console.error('API error:', error);
@@ -1162,7 +1165,7 @@ Data Access Layer (Database/External APIs)
 **解決方法**: レート制限を実装し、適切なエラーメッセージを表示
 
 #### エラー: "Streaming not working"
-**解決方法**: API Route Handlerで`toDataStreamResponse()`を使用しているか確認
+**解決方法**: API Route Handlerで`toUIMessageStreamResponse()`を使用しているか確認（AI SDK 6では`useChat()`がこの形式を期待）
 
 ### 9.2 パフォーマンスの問題
 

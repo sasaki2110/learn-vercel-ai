@@ -30,29 +30,123 @@ export default function ChatPage() {
             <p>メッセージを入力して会話を始めましょう</p>
           </div>
         )}
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`p-4 rounded-lg ${
-              message.role === 'user'
-                ? 'bg-blue-100 dark:bg-blue-900 ml-auto max-w-[80%]'
-                : 'bg-gray-100 dark:bg-gray-800 mr-auto max-w-[80%]'
-            }`}
-          >
-            <div className="font-semibold mb-1 text-sm">
-              {message.role === 'user' ? 'あなた' : 'AI'}
+        {messages.map((message) => {
+          // デバッグ: メッセージ構造を確認
+          if (message.role === 'assistant') {
+            const textParts = message.parts?.filter((p: any) => p.type === 'text') || [];
+            const toolParts = message.parts?.filter((p: any) => p.type?.startsWith('tool-')) || [];
+            console.log('[DEBUG] Assistant message:', {
+              id: message.id,
+              partsCount: message.parts?.length,
+              textPartsCount: textParts.length,
+              toolPartsCount: toolParts.length,
+              hasText: textParts.length > 0,
+              textContent: textParts.map((p: any) => p.text).join(''),
+              parts: message.parts,
+            });
+          }
+
+          return (
+            <div
+              key={message.id}
+              className={`p-4 rounded-lg ${
+                message.role === 'user'
+                  ? 'bg-blue-100 dark:bg-blue-900 ml-auto max-w-[80%]'
+                  : 'bg-gray-100 dark:bg-gray-800 mr-auto max-w-[80%]'
+              }`}
+            >
+              <div className="font-semibold mb-1 text-sm">
+                {message.role === 'user' ? 'あなた' : 'AI'}
+              </div>
+              {/* AI SDK 6では、message.contentではなくmessage.partsを使用 */}
+              <div className="whitespace-pre-wrap space-y-2">
+                {message.parts?.map((part: any, index: number) => {
+                  // テキストパートの表示
+                  if (part.type === 'text' && 'text' in part) {
+                    return (
+                      <div key={index} className="whitespace-pre-wrap">
+                        {part.text}
+                      </div>
+                    );
+                  }
+                  
+                  // ステップ開始（スキップ）
+                  if (part.type === 'step-start') {
+                    return null;
+                  }
+                  
+                  // 推論（reasoning）パートの表示
+                  if (part.type === 'reasoning' && part.text) {
+                    return (
+                      <div key={index} className="mt-2 p-2 bg-purple-100 dark:bg-purple-900 rounded text-sm">
+                        <div className="font-semibold">💭 推論中...</div>
+                        {part.text && (
+                          <div className="text-gray-600 dark:text-gray-300 mt-1 text-xs">
+                            {part.text}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  
+                  // ツール呼び出しの表示（AI SDK 6の形式: "tool-{toolName}"）
+                  if (part.type?.startsWith('tool-')) {
+                    const toolName = part.type.replace('tool-', '');
+                    const state = part.state || 'unknown';
+                    
+                    return (
+                      <div key={index} className="mt-2 p-2 bg-yellow-100 dark:bg-yellow-900 rounded text-sm">
+                        <div className="font-semibold">
+                          🔧 ツール呼び出し: {toolName}
+                          {state === 'input-streaming' && <span className="ml-2 text-xs">(入力中...)</span>}
+                          {state === 'input-available' && <span className="ml-2 text-xs">(実行中...)</span>}
+                          {state === 'output-available' && <span className="ml-2 text-xs">(完了)</span>}
+                        </div>
+                        
+                        {/* 入力パラメータの表示 */}
+                        {part.input && (
+                          <div className="text-gray-600 dark:text-gray-300 mt-1">
+                            <div className="text-xs font-semibold">パラメータ:</div>
+                            <div className="text-xs font-mono bg-white dark:bg-gray-800 p-1 rounded mt-1">
+                              {JSON.stringify(part.input, null, 2)}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* 出力結果の表示 */}
+                        {part.output && (
+                          <div className="text-gray-600 dark:text-gray-300 mt-2">
+                            <div className="text-xs font-semibold">✅ 結果:</div>
+                            <div className="text-xs font-mono bg-green-50 dark:bg-green-950 p-1 rounded mt-1 whitespace-pre-wrap">
+                              {JSON.stringify(part.output, null, 2)}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* エラーの表示 */}
+                        {part.errorText && (
+                          <div className="text-red-600 dark:text-red-300 mt-2">
+                            <div className="text-xs font-semibold">❌ エラー:</div>
+                            <div className="text-xs font-mono bg-red-50 dark:bg-red-950 p-1 rounded mt-1">
+                              {part.errorText}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  
+                  // その他のパートタイプ（デバッグ用 - 開発環境のみ）
+                  if (process.env.NODE_ENV === 'development') {
+                    console.log('[DEBUG] Unknown part type:', part);
+                  }
+                  
+                  return null;
+                })}
+              </div>
             </div>
-            {/* AI SDK 6では、message.contentではなくmessage.partsを使用 */}
-            <div className="whitespace-pre-wrap">
-              {message.parts.map((part, index) => {
-                if (part.type === 'text') {
-                  return <span key={index}>{part.text}</span>;
-                }
-                return null;
-              })}
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {(status === 'submitted' || status === 'streaming') && (
           <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg mr-auto max-w-[80%]">
             <div className="font-semibold mb-1 text-sm">AI</div>

@@ -192,7 +192,7 @@ const model = google('gemini-pro');
    - 最新のモデル（例: `gpt-4o`, `gpt-4-turbo`）も使用可能です
 
 4. **注意事項**
-   - `gpt-5-nano`のようなモデルは、現時点（2024年12月）では存在しません
+   - モデル名は正確に指定する必要があります（例: `gpt-5-nano`, `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo`）
    - モデル名は正確に指定する必要があります（大文字小文字を区別）
    - 新しいモデルがリリースされた場合、AI SDKの更新が必要な場合があります
 
@@ -264,20 +264,114 @@ for await (const chunk of stream.textStream) {
 
 #### 3.2.4 Tools（ツール）
 
-ツールは、AIモデルが外部機能を呼び出すための仕組みです。例えば、天気情報を取得したり、データベースを検索したりできます。
+ツールは、AIモデル（LLM）が外部機能を呼び出すための仕組みです。例えば、天気情報を取得したり、データベースを検索したりできます。
+
+**Tools機能の仕組み:**
+
+Toolsは、**呼び出しているLLMへツールを提供する**機能です。開発者がツールを定義してLLMに提供すると、LLMが会話の文脈を判断して、必要に応じて自動的にツールを呼び出します。
+
+**動作フロー:**
+
+1. **開発者がツールを定義**
+   - `description`: LLMがこのツールを理解するための説明
+   - `parameters`: ツールが受け取るパラメータの定義（Zodスキーマ）
+   - `execute`: 実際に実行される関数
+
+2. **`streamText()`や`generateText()`にツールを渡す**
+   - `tools`パラメータとしてツール定義を渡す
+
+3. **LLMが会話の文脈を判断し、必要に応じてツールを呼び出す**
+   - ユーザーの質問を理解し、「このツールを使う必要がある」と判断
+   - 適切なパラメータでツールを呼び出す
+
+4. **AI SDKがツールの`execute`関数を実行**
+   - 実行結果を取得
+
+5. **実行結果をLLMに返す**
+   - LLMがツールの実行結果を受け取り、それを基に最終的な回答を生成
+
+**重要なポイント:**
+
+- **LLMが自動で判断**: 開発者がツールを呼び出すタイミングを指定する必要はありません。LLMが会話の文脈から自動的に判断します。
+- **ループ処理は不要**: AI SDKがツール呼び出しのループを自動で処理します。自前でReactループなどを作成する必要はありません。
+- **複数ツールの連鎖**: LLMが必要に応じて複数のツールを順番に呼び出すことも可能です。
+
+**基本的な使用例:**
 
 ```typescript
+import { z } from 'zod';
+
 const tools = {
   getWeather: {
-    description: "Get the current weather",
+    description: "Get the current weather for a location",
     parameters: z.object({
-      location: z.string(),
+      location: z.string().describe("The city and state, e.g. San Francisco, CA"),
     }),
     execute: async ({ location }) => {
-      // 天気を取得する処理
+      // 実際の天気APIを呼び出す
+      // ここでは例として固定値を返す
+      return {
+        location,
+        temperature: '72°F',
+        condition: 'Sunny',
+      };
+    },
+  },
+  calculate: {
+    description: "Perform a mathematical calculation",
+    parameters: z.object({
+      expression: z.string().describe("Mathematical expression to evaluate"),
+    }),
+    execute: async ({ expression }) => {
+      // セキュリティのため、evalは使用しない
+      // 実際の実装では、安全な計算ライブラリを使用
+      try {
+        // 例: 簡単な計算のみを許可
+        if (/^[\d+\-*/().\s]+$/.test(expression)) {
+          // 安全な計算処理
+          return { result: 'Calculation result' };
+        }
+        return { error: 'Invalid expression' };
+      } catch (error) {
+        return { error: 'Calculation failed' };
+      }
     },
   },
 };
+
+// streamText()にツールを渡す
+const result = await streamText({
+  model: openai('gpt-5-nano'),
+  messages: await convertToModelMessages(messages),
+  tools,  // ← ここでLLMにツールを提供
+});
+```
+
+**使用例の動作:**
+
+```
+ユーザー: "東京の天気を教えて"
+↓
+LLM: 「getWeatherツールを呼び出す必要がある」と判断
+↓
+AI SDK: getWeather.execute({ location: "Tokyo" })を実行
+↓
+結果: { location: "Tokyo", temperature: "72°F", condition: "Sunny" }
+↓
+LLM: 結果を受け取り、最終的な回答を生成
+↓
+LLM: "東京の現在の天気は晴れで、気温は72°Fです。"
+```
+
+**複数ツールの連鎖例:**
+
+```
+ユーザー: "東京の天気を教えて、それからその気温を摂氏に変換して"
+↓
+1. LLMがgetWeather({ location: "Tokyo" })を呼び出す
+2. 結果: { temperature: '72°F' }
+3. LLMがconvertTemperature({ fahrenheit: 72 })を呼び出す（もしそのツールがあれば）
+4. 最終的な回答を生成
 ```
 
 ### 3.3 主要なAPI
@@ -347,19 +441,19 @@ app/
 **`app/api/chat/route.ts`**を作成：
 
 ```typescript
-import { streamText } from 'ai';
+import { convertToModelMessages, streamText, UIMessage } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
 // ストリーミングレスポンスを返すAPI Route
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  const { messages }: { messages: UIMessage[] } = await req.json();
 
   const result = await streamText({
     model: openai('gpt-4'),
-    messages,
+    messages: await convertToModelMessages(messages),  // AI SDK 6ではUIMessageをModelMessageに変換
   });
 
-  return result.toTextStreamResponse();
+  return result.toUIMessageStreamResponse();  // AI SDK 6ではuseChat()がこの形式を期待
 }
 ```
 
@@ -369,6 +463,11 @@ export async function POST(req: Request) {
 - Anthropic: `import { anthropic } from '@ai-sdk/anthropic';` （`@ai-sdk/anthropic`パッケージをインストールする必要があります）
 - Google: `import { google } from '@ai-sdk/google';` （`@ai-sdk/google`パッケージをインストールする必要があります）
 - AI Gateway: `import { createGateway } from 'ai/gateway';`
+
+**AI SDK 6の重要な変更点**:
+- `useChat`から送られてくるメッセージは`UIMessage[]`型です
+- `streamText`に渡す前に`convertToModelMessages()`で`ModelMessage[]`に変換する必要があります
+- レスポンスは`toUIMessageStreamResponse()`を使用します（`useChat`や`useCompletion`が期待する形式）
 
 **必要なパッケージのインストール:**
 
@@ -392,7 +491,7 @@ npm install @ai-sdk/google
 ```typescript
 'use client';
 
-import { useChat } from 'ai/react';
+import { useChat } from '@ai-sdk/react';
 
 export default function Chat() {
   const { messages, input, handleInputChange, handleSubmit } = useChat();
@@ -435,7 +534,7 @@ export async function POST(req: Request) {
   const { prompt } = await req.json();
 
   // AI Gatewayを使わずに、直接OpenAIを指定
-  // gpt-5-nanoを指定（注意: このモデルは現時点では存在しない可能性があります）
+  // gpt-5-nanoを指定（高速かつコスト効率の高いモデル）
   const { text } = await generateText({
     model: openai('gpt-5-nano'),
     prompt,
@@ -448,7 +547,7 @@ export async function POST(req: Request) {
 **注意**: 
 - この例では、AI Gatewayを使わずに直接OpenAIプロバイダーを使用しています
 - `openai('gpt-5-nano')`のように、関数形式でモデルを指定します
-- `gpt-5-nano`は例として使用していますが、実際に使用する場合は、OpenAI APIで利用可能なモデル名を指定してください
+- 実際に使用する場合は、OpenAI APIで利用可能なモデル名を指定してください（例: `gpt-5-nano`, `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo`）
 - 利用可能なモデルは、[OpenAI Models Documentation](https://platform.openai.com/docs/models)で確認できます
 
 **`app/generate/page.tsx`**:
@@ -533,7 +632,7 @@ export async function POST(req: Request) {
     // streamText()を使用してストリーミングレスポンスを返す
     // generateText()とは異なり、結果を段階的に返すことができる
     const result = await streamText({
-      model: openai('gpt-5-nano'),  // モデルオブジェクトを指定
+      model: openai('gpt-5-nano'),  // モデルオブジェクトを指定（高速かつコスト効率の高いモデル）
       prompt,                        // この時点でOpenAI APIが呼び出される
     });
 
@@ -549,7 +648,7 @@ export async function POST(req: Request) {
       return Response.json(
         { 
           error: 'Model not found. Please check if the model name is correct.',
-          details: 'The model "gpt-5-nano" may not exist. Try using "gpt-4o" or "gpt-3.5-turbo" instead.'
+          details: 'The model may not exist. Try using "gpt-5-nano", "gpt-4o" or "gpt-3.5-turbo" instead.'
         },
         { status: 400 }
       );
@@ -688,7 +787,7 @@ const { completion, input, handleInputChange, handleSubmit, isLoading, error } =
 **使用例**:
 ```typescript
 const result = await streamText({
-  model: openai('gpt-5-nano'),
+  model: openai('gpt-5-nano'),  // 高速かつコスト効率の高いモデル
   prompt,
 });
 

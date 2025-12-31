@@ -1,5 +1,6 @@
-import { convertToModelMessages, streamText, UIMessage } from 'ai';
+import { convertToModelMessages, streamText, UIMessage, stepCountIs } from 'ai';
 import { openai } from '@ai-sdk/openai';
+import { tools } from '../tools';
 
 export async function POST(req: Request) {
   try {
@@ -12,15 +13,31 @@ export async function POST(req: Request) {
       );
     }
 
+    const modelMessages = await convertToModelMessages(messages);
+
+    console.log('[DEBUG] Calling streamText with tools...');
+
     // streamText()を使用してストリーミングレスポンスを返す
-    // AI SDK 6では、convertToModelMessages()でUIMessageをModelMessageに変換する必要がある
+    // stopWhen: デフォルトはstepCountIs(1)で、1ステップで停止してしまいます
+    // ツール呼び出し後に最終回答を生成するために、複数のステップを許可する必要があります
     const result = await streamText({
-      model: openai('gpt-4o'),  // GPT-4oモデルを使用
-      messages: await convertToModelMessages(messages),  // UIMessageをModelMessageに変換
+      model: openai('gpt-5-nano'),
+      messages: modelMessages,
+      tools,
+      stopWhen: stepCountIs(5),  // ツール呼び出し後の最終回答を生成するために、最大5ステップまで許可
+      onStepFinish: async (step) => {
+        // 各ステップの完了をログに記録
+        console.log(`[DEBUG] Step finished:`, {
+          textLength: step.text?.length || 0,
+          textPreview: step.text?.substring(0, 100) || '(no text)',
+          toolCalls: step.toolCalls?.length || 0,
+          toolResults: step.toolResults?.length || 0,
+          finishReason: step.finishReason,
+        });
+      },
     });
 
-    // toUIMessageStreamResponse()でストリーミングレスポンスを返す
-    // AI SDK 6では、useChat()はこの形式を期待している
+    console.log('[DEBUG] Returning stream response...');
     return result.toUIMessageStreamResponse();
   } catch (error: any) {
     console.error('Chat API error:', error);
