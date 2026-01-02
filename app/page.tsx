@@ -60,6 +60,18 @@ export default function Home() {
                 AI Elements Messageコンポーネント
               </p>
             </Link>
+            
+            <Link
+              href="/conversation-demo"
+              className="flex flex-col items-center justify-center p-6 rounded-lg border border-solid border-black/[.08] bg-white dark:bg-gray-800 dark:border-white/[.145] transition-colors hover:border-transparent hover:bg-black/[.04] dark:hover:bg-[#1a1a1a]"
+            >
+              <div className="text-2xl font-semibold mb-2 text-black dark:text-zinc-50">
+                Conversation Demo
+              </div>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                AI Elements Conversationコンポーネント
+              </p>
+            </Link>
           </div>
         </div>
       </main>
