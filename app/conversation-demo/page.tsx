@@ -6,9 +6,13 @@ import {
   MessageContent,
   MessageResponse,
 } from '@/components/ai-elements/message';
+import {
+  PromptInput,
+  PromptInputTextarea,
+  PromptInputSubmit,
+} from '@/components/ai-elements/prompt-input';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { useState } from 'react';
 
 /**
  * 4.2 Conversationコンポーネントも使ったサンプル
@@ -21,6 +25,7 @@ import { useState } from 'react';
  * - Message: メッセージのコンテナ（fromプロパティでuser/assistantを指定）
  * - MessageContent: メッセージの内容を包むコンテナ
  * - MessageResponse: 実際のメッセージテキストを表示（Streamdownを使用してMarkdownをレンダリング）
+ * - PromptInput: 高度な入力コンポーネント（ファイル添付、Enter送信、Shift+Enter改行対応）
  */
 export default function ConversationDemoPage() {
   // AI SDK 6の新しいAPIを使用
@@ -29,8 +34,6 @@ export default function ConversationDemoPage() {
       api: '/api/chat',
     }),
   });
-
-  const [input, setInput] = useState('');
 
   // メッセージの内容を取得するヘルパー関数
   // AI SDK 6では、message.partsからテキストを抽出する必要があります
@@ -86,35 +89,25 @@ export default function ConversationDemoPage() {
         )}
       </Conversation>
 
-      {/* 入力フォーム */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (input.trim()) {
-            sendMessage({ text: input });
-            setInput('');
+      {/* PromptInputコンポーネントを使用した入力フォーム */}
+      <PromptInput
+        onSubmit={async (message) => {
+          if (message.text.trim()) {
+            sendMessage({ text: message.text });
           }
         }}
         className="space-y-4"
       >
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="メッセージを入力..."
-            className="flex-1 p-3 border border-gray-300 dark:border-gray-700 rounded-lg dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={status !== 'ready'}
-          />
-          <button
-            type="submit"
-            disabled={status !== 'ready' || !input.trim()}
-            className="px-6 py-3 bg-blue-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors"
-          >
-            {status === 'submitted' || status === 'streaming' ? '送信中...' : '送信'}
-          </button>
-        </div>
-      </form>
+        <PromptInputTextarea
+          placeholder="メッセージを入力... (Enterで送信、Shift+Enterで改行)"
+          disabled={status !== 'ready'}
+        />
+        <PromptInputSubmit
+          disabled={status !== 'ready'}
+        >
+          {status === 'submitted' || status === 'streaming' ? '送信中...' : '送信'}
+        </PromptInputSubmit>
+      </PromptInput>
 
       {/* コード例の説明 */}
       <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
@@ -136,6 +129,18 @@ export default function ConversationDemoPage() {
             <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">MessageResponse</code>: 
             実際のメッセージテキストを表示。Streamdownを使用してMarkdownをレンダリング
           </li>
+          <li>
+            <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">PromptInput</code>: 
+            高度な入力コンポーネント。ファイル添付、ドラッグ&ドロップ、Enter送信、Shift+Enter改行、日本語入力（IME）対応
+          </li>
+          <li>
+            <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">PromptInputTextarea</code>: 
+            テキスト入力エリア。自動リサイズ、Enter送信、ペースト時のファイル処理
+          </li>
+          <li>
+            <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">PromptInputSubmit</code>: 
+            送信ボタン。状態に応じた自動無効化
+          </li>
         </ul>
         <div className="mt-4 p-3 bg-white dark:bg-gray-800 rounded border border-blue-200 dark:border-blue-800">
           <p className="text-sm font-semibold mb-1">💡 Conversationコンポーネントの利点:</p>
@@ -143,6 +148,16 @@ export default function ConversationDemoPage() {
             <li>メッセージ間の適切な間隔とレイアウトを自動的に管理</li>
             <li>スクロール可能な会話エリアのスタイリング</li>
             <li>複数のメッセージをグループ化して管理</li>
+          </ul>
+        </div>
+        <div className="mt-4 p-3 bg-white dark:bg-gray-800 rounded border border-green-200 dark:border-green-800">
+          <p className="text-sm font-semibold mb-1">✨ PromptInputコンポーネントの特徴:</p>
+          <ul className="list-disc list-inside space-y-1 text-xs text-gray-700 dark:text-gray-300">
+            <li>Enterキーで送信、Shift+Enterで改行</li>
+            <li>日本語入力（IME）の適切な処理</li>
+            <li>ファイル添付機能（ドラッグ&ドロップ、クリップボードからのペースト）</li>
+            <li>自動リサイズするテキストエリア</li>
+            <li>統一されたスタイリングとダークモード対応</li>
           </ul>
         </div>
       </div>
