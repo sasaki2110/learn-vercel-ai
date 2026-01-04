@@ -25,20 +25,27 @@ export async function POST(req: Request) {
       );
     }
 
+    // langgraph dev のAPIエンドポイントに接続
+    const langgraphUrl = process.env.LANGGRAPH_API_URL || 'http://localhost:2024';
+    // エージェントIDを環境変数から取得（デフォルト値: ex02_parroting）
+    const graphId = process.env.LANGGRAPH_AGENT_ID || 'ex02_parroting';
+
     // UIメッセージをLangChain形式に変換
     const langchainMessages = await toBaseMessages(messages);
 
-    console.log('[DEBUG] Calling LangGraph with messages:', {
-      messageCount: langchainMessages.length,
-      lastMessage: langchainMessages[langchainMessages.length - 1]?.content?.substring(0, 100),
-    });
-
-    // langgraph dev のAPIエンドポイントに接続
-    const langgraphUrl = process.env.LANGGRAPH_API_URL || 'http://localhost:2024';
-    const graphId = 'p31_streaming';
-
     // LangGraphのストリームエンドポイントを呼び出し
     // langgraph dev は /runs/stream エンドポイントを提供（stateless run）
+    const requestBody = {
+      assistant_id: graphId,  // グラフIDを指定
+      input: {
+        messages: langchainMessages.map((msg) => ({
+          role: msg.constructor.name === 'HumanMessage' ? 'human' : 'ai',
+          content: msg.content,
+        })),
+      },
+      stream_mode: 'messages',  // 'messages' のみを使用（推奨）
+    };
+
     const response = await fetch(
       `${langgraphUrl}/runs/stream`,
       {
@@ -46,21 +53,14 @@ export async function POST(req: Request) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          assistant_id: graphId,  // グラフIDを指定
-          input: {
-            messages: langchainMessages.map((msg) => ({
-              role: msg.constructor.name === 'HumanMessage' ? 'human' : 'ai',
-              content: msg.content,
-            })),
-          },
-          stream_mode: 'messages',  // 'messages' のみを使用（推奨）
-        }),
+        body: JSON.stringify(requestBody),
       }
     );
 
     if (!response.ok) {
-      throw new Error(`LangGraph API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('[ERROR] LangGraph API error response:', errorText);
+      throw new Error(`LangGraph API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     if (!response.body) {
@@ -121,12 +121,8 @@ export async function POST(req: Request) {
       }
     };
 
-    console.log('[DEBUG] LangGraph stream obtained, converting to UI message stream...');
-
     // LangGraphのストリームをUIメッセージストリームに変換
     const uiMessageStream = toUIMessageStream(stream());
-
-    console.log('[DEBUG] Returning UI message stream response...');
 
     // UIメッセージストリームレスポンスを返す
     return createUIMessageStreamResponse({

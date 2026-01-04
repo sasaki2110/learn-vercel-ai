@@ -35,10 +35,10 @@ export default function LangGraphChatPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold mb-2">LangGraph チャット</h1>
         <p className="text-gray-600 dark:text-gray-400 text-sm">
-          LangGraph エージェント（p31_streaming）と対話します
+          LangGraph エージェントと対話します
         </p>
         <p className="text-gray-500 dark:text-gray-500 text-xs mt-1">
-          API: http://localhost:2024 | Assistant ID: p31_streaming
+          API: http://localhost:2024 | エージェントIDは.env.localのLANGGRAPH_AGENT_IDで設定
         </p>
       </div>
       
