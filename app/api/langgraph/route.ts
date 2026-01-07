@@ -1,6 +1,3 @@
-import { toBaseMessages, toUIMessageStream } from '@ai-sdk/langchain';
-import { createUIMessageStreamResponse } from 'ai';
-import { AIMessageChunk } from '@langchain/core/messages';
 
 /**
  * LangGraph API ルート
@@ -16,9 +13,11 @@ import { AIMessageChunk } from '@langchain/core/messages';
  */
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const body = await req.json();
+    const { messages } = body;
 
     if (!messages || !Array.isArray(messages)) {
+      console.error('[ERROR] Messages is not an array:', messages);
       return Response.json(
         { error: 'Messages array is required' },
         { status: 400 }
@@ -31,31 +30,52 @@ export async function POST(req: Request) {
     const graphId = process.env.LANGGRAPH_AGENT_ID || 'ex02_parroting';
 
     // UIメッセージをLangChain形式に変換
-    const langchainMessages = await toBaseMessages(messages);
+    // フロントエンドから送信される形式: {role: 'user' | 'assistant', content: string}
+    // toBaseMessagesを使わずに、直接LangGraph形式に変換
+    const langgraphMessages = messages.map((msg: any) => ({
+      role: msg.role === 'user' ? 'human' : 'ai',
+      content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+    }));
 
     // LangGraphのストリームエンドポイントを呼び出し
     // langgraph dev は /runs/stream エンドポイントを提供（stateless run）
     const requestBody = {
       assistant_id: graphId,  // グラフIDを指定
       input: {
-        messages: langchainMessages.map((msg) => ({
-          role: msg.constructor.name === 'HumanMessage' ? 'human' : 'ai',
-          content: msg.content,
-        })),
+        messages: langgraphMessages,
       },
       stream_mode: 'messages',  // 'messages' のみを使用（推奨）
     };
 
-    const response = await fetch(
-      `${langgraphUrl}/runs/stream`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+    let response: Response;
+    try {
+      response = await fetch(
+        `${langgraphUrl}/runs/stream`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        }
+      );
+    } catch (fetchError: any) {
+      console.error('[ERROR] Failed to connect to LangGraph:', fetchError);
+      
+      // 接続エラーの場合、より分かりやすいメッセージを返す
+      if (fetchError.code === 'ECONNREFUSED' || fetchError.message?.includes('ECONNREFUSED')) {
+        return Response.json(
+          {
+            error: 'LangGraphサーバーに接続できません',
+            details: `LangGraphサーバー（${langgraphUrl}）が起動しているか確認してください。`,
+            hint: 'LangGraphサーバーを起動するには、別のターミナルで `langgraph dev` を実行してください。',
+          },
+          { status: 503 }
+        );
       }
-    );
+      
+      throw new Error(`LangGraph接続エラー: ${fetchError.message}`);
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -69,19 +89,18 @@ export async function POST(req: Request) {
 
     // HTTPストリームをAsyncIterableに変換
     // langgraph dev は Server-Sent Events (SSE) 形式でストリームを返す
+    // 案2: カスタムストリーム形式でメッセージIDとコンテンツを一緒に送信
     const stream = async function* () {
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let currentEvent = '';
-      let previousEvent = ''; // 前回のイベントタイプを追跡
       // メッセージIDごとにlastContentを追跡
       const messageContentMap = new Map<string, string>();
-      // 現在処理中のメッセージID（複数ノードからのメッセージを統合するため、最新のメッセージのみを追跡）
+      // 現在処理中のメッセージID
       let currentMessageId: string | null = null;
-      let lastSentContent = '';
-      // 前回処理したメッセージIDを追跡（メッセージIDが変わったときに前のメッセージをリセットするため）
-      let previousMessageId: string | null = null;
+      // 送信済みのツール呼び出しIDと引数の組み合わせを記録（重複送信を防ぐため）
+      const sentToolCallArgs = new Map<string, string>(); // toolCallId -> JSON.stringify(args)
 
       try {
         while (true) {
@@ -95,13 +114,7 @@ export async function POST(req: Request) {
           for (const line of lines) {
             // イベントタイプを取得
             if (line.startsWith('event: ')) {
-              const newEvent = line.slice(7).trim();
-              // イベントタイプが変わったときのみログ出力
-              if (newEvent !== previousEvent) {
-                console.log(`[EVENT CHANGE] ${previousEvent || '(none)'} -> ${newEvent}`);
-                previousEvent = newEvent;
-              }
-              currentEvent = newEvent;
+              currentEvent = line.slice(7).trim();
               continue;
             }
             
@@ -113,89 +126,88 @@ export async function POST(req: Request) {
                 // messages/partial イベントを処理
                 if (currentEvent === 'messages/partial' && Array.isArray(data)) {
                   // メッセージ配列から最新のメッセージを取得
-                  // 複数のメッセージがある場合、最新のものを優先
                   const latestMessage = data[data.length - 1];
-                  if (!latestMessage || !latestMessage.id || !latestMessage.content) continue;
+                  if (!latestMessage || !latestMessage.id) continue;
                   
                   const messageId = latestMessage.id;
-                  const currentContent = latestMessage.content;
+                  const currentContent = latestMessage.content || '';
                   
-                  // メッセージIDが変わった場合、前のメッセージを完全にリセット
-                  if (messageId !== currentMessageId) {
-                    // メッセージIDが変わったときのみログ出力
-                    console.log(`[MESSAGE ID CHANGE] ${currentMessageId || '(none)'} -> ${messageId}`);
-                    console.log(`[MESSAGE CONTENT] Length: ${currentContent.length}, Content: ${currentContent.substring(0, 100)}${currentContent.length > 100 ? '...' : ''}`);
-                    console.log(`[PREVIOUS SENT] Length: ${lastSentContent.length}, Content: ${lastSentContent.substring(0, 50)}${lastSentContent.length > 50 ? '...' : ''}`);
-                    
-                    // 新しいメッセージIDが来た場合、前のメッセージを完了として扱う
-                    previousMessageId = currentMessageId;
-                    currentMessageId = messageId;
-                    // 前のメッセージを完全にリセット
-                    lastSentContent = '';
-                    messageContentMap.clear();
-                    // 新しいメッセージの内容を最初から送信
-                    messageContentMap.set(messageId, currentContent);
-                    // メッセージIDが変わったときは、前のメッセージを完全に置き換えるため、
-                    // 新しいメッセージの内容を最初から送信
-                    // メッセージIDが変わったときは、前のメッセージを完全に置き換えるため、
-                    // 新しいメッセージの内容を最初から送信
-                    console.log(`[YIELDING NEW MESSAGE] Length: ${currentContent.length}, Content: ${currentContent.substring(0, 100)}${currentContent.length > 100 ? '...' : ''}`);
-                    const newChunk = new AIMessageChunk(currentContent);
-                    console.log(`[YIELDING CHUNK] Chunk type: ${newChunk.constructor.name}, Content length: ${newChunk.content.length}`);
-                    yield newChunk;
-                    lastSentContent = currentContent;
-                    continue;
-                  }
-                  
-                  // メッセージの内容を更新
-                  const previousContent = messageContentMap.get(messageId) || '';
-                  
-                  // 内容が更新された場合のみ処理
-                  if (currentContent !== previousContent) {
-                    // 差分を計算して送信
-                    if (previousContent && currentContent.startsWith(previousContent)) {
-                      // 既存のメッセージの更新：差分のみを送信
-                      const newContent = currentContent.slice(previousContent.length);
-                      if (newContent) {
-                        console.log(`[CONTENT UPDATE] MessageID: ${messageId}, Added length: ${newContent.length}, Total: ${currentContent.length}, New content: ${newContent.substring(0, 50)}${newContent.length > 50 ? '...' : ''}`);
-                        const updateChunk = new AIMessageChunk(newContent);
-                        console.log(`[YIELDING UPDATE CHUNK] Chunk type: ${updateChunk.constructor.name}, Content length: ${updateChunk.content.length}`);
-                        yield updateChunk;
-                        lastSentContent = currentContent;
-                      }
-                    } else {
-                      // 内容が完全に変わった場合（前の内容が現在の内容のプレフィックスでない場合）
-                      // メッセージIDは同じだが内容が完全に変わったときのみログ出力
-                      console.log(`[CONTENT REPLACED] MessageID: ${messageId}, Previous length: ${previousContent.length}, New length: ${currentContent.length}`);
-                      console.log(`[NEW CONTENT] ${currentContent.substring(0, 100)}${currentContent.length > 100 ? '...' : ''}`);
-                      
-                      // 前回送信した内容をリセットして、新しい内容を最初から送信
-                      // ただし、前回送信した内容が現在の内容のプレフィックスである場合は、差分のみを送信
-                      if (lastSentContent && currentContent.startsWith(lastSentContent)) {
-                        // 前回送信した内容からの差分
-                        const newContent = currentContent.slice(lastSentContent.length);
-                        if (newContent) {
-                          yield new AIMessageChunk(newContent);
+                  // ツール呼び出しを検出（引数が空でない場合、かつ前回と異なる場合のみ送信）
+                  if (latestMessage.tool_calls && Array.isArray(latestMessage.tool_calls) && latestMessage.tool_calls.length > 0) {
+                    for (const toolCall of latestMessage.tool_calls) {
+                      // 引数が空でない場合のみ処理
+                      if (Object.keys(toolCall.args).length > 0) {
+                        const argsKey = JSON.stringify(toolCall.args);
+                        const previousArgs = sentToolCallArgs.get(toolCall.id);
+                        
+                        // 前回と異なる引数の場合のみ送信
+                        if (previousArgs !== argsKey) {
+                          console.log(`[TOOL CALL] Tool: ${toolCall.name}, Args:`, toolCall.args);
+                          sentToolCallArgs.set(toolCall.id, argsKey);
+                          yield {
+                            type: 'tool-call',
+                            messageId: messageId,
+                            toolCall: {
+                              id: toolCall.id,
+                              name: toolCall.name,
+                              args: toolCall.args,
+                            },
+                          };
                         }
-                        lastSentContent = currentContent;
-                      } else {
-                        // 完全に新しい内容：前回送信した内容をリセットして、新しい内容を最初から送信
-                        // これは通常発生しないはずですが、念のため処理
-                        lastSentContent = '';
-                        yield new AIMessageChunk(currentContent);
-                        lastSentContent = currentContent;
                       }
                     }
-                    
-                    // メッセージの内容を更新
-                    messageContentMap.set(messageId, currentContent);
                   }
-                } else {
-                  // messages/partial以外のイベントのデータをログ出力（必要に応じて）
-                  // console.log(`[OTHER EVENT DATA] ${currentEvent}:`, JSON.stringify(data, null, 2));
+                  
+                  // メッセージIDが変わった場合、メッセージID変更を通知
+                  if (messageId !== currentMessageId) {
+                    console.log(`[MESSAGE ID CHANGE] ${currentMessageId || '(none)'} -> ${messageId}`);
+                    // メッセージID変更を通知する特別なチャンク
+                    yield {
+                      type: 'message-id-change',
+                      messageId: messageId,
+                      previousMessageId: currentMessageId,
+                    };
+                    currentMessageId = messageId;
+                    // メッセージの内容をリセット
+                    messageContentMap.clear();
+                    messageContentMap.set(messageId, currentContent);
+                    // ツール呼び出しの追跡もリセット
+                    sentToolCallArgs.clear();
+                  }
+                  
+                  // メッセージの内容を更新（contentがある場合のみ）
+                  if (currentContent) {
+                    const previousContent = messageContentMap.get(messageId) || '';
+                    
+                    // 内容が更新された場合のみ処理
+                    if (currentContent !== previousContent) {
+                      // コンテンツチャンクを送信
+                      yield {
+                        type: 'content',
+                        messageId: messageId,
+                        content: currentContent,
+                      };
+                      
+                      // メッセージの内容を更新
+                      messageContentMap.set(messageId, currentContent);
+                    }
+                  }
+                } else if (currentEvent === 'messages/complete' && Array.isArray(data)) {
+                  // ツール結果を検出（messages/completeイベントでtype: "tool"のメッセージ）
+                  for (const message of data) {
+                    if (message.type === 'tool' && message.tool_call_id) {
+                      console.log(`[TOOL RESULT] Tool call ID: ${message.tool_call_id}, Result: ${message.content}, Status: ${message.status}`);
+                      yield {
+                        type: 'tool-result',
+                        toolCallId: message.tool_call_id,
+                        result: message.content,
+                        status: message.status || 'success',
+                      };
+                    }
+                  }
                 }
               } catch (parseError) {
-                console.error('[DEBUG] Failed to parse SSE data:', parseError, line);
+                console.error('[ERROR] Failed to parse SSE data:', parseError, line);
               }
             }
           }
@@ -205,18 +217,33 @@ export async function POST(req: Request) {
       }
     };
 
-    // LangGraphのストリームをUIメッセージストリームに変換
-    console.log('[STREAM] Converting LangChain stream to UI message stream...');
-    const uiMessageStream = toUIMessageStream(stream());
-    console.log('[STREAM] UI message stream created');
-
-    // UIメッセージストリームレスポンスを返す
-    console.log('[STREAM] Creating UI message stream response...');
-    const streamResponse = createUIMessageStreamResponse({
-      stream: uiMessageStream,
-    });
-    console.log('[STREAM] UI message stream response created');
-    return streamResponse;
+    // カスタムストリーム形式をSSE形式で送信
+    return new Response(
+      new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          
+          try {
+            for await (const chunk of stream()) {
+              // SSE形式で送信
+              const data = JSON.stringify(chunk);
+              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+            }
+            controller.close();
+          } catch (error) {
+            console.error('[ERROR] Stream error:', error);
+            controller.error(error);
+          }
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      }
+    );
   } catch (error: any) {
     console.error('[ERROR] LangGraph API error:', error);
     
